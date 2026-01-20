@@ -65,30 +65,52 @@
         let scene, camera, renderer, tree;
         let hands;
 
-        // --- 1. 初始化 3D 场景 ---
-        function initThree() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.getElementById('canvas-container').appendChild(renderer.domElement);
+// --- 1. 初始化 3D 场景 (增强版) ---
+function initThree() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-            // 创建一颗简单的粒子圣诞树
-            const geometry = new THREE.ConeGeometry(5, 10, 32);
-            const material = new THREE.PointsMaterial({ color: 0x00ff88, size: 0.1 });
-            tree = new THREE.Points(geometry, material);
-            scene.add(tree);
+    tree = new THREE.Group(); // 使用组来容纳多层树叶
 
-            camera.position.z = 15;
+    // 创建 4 层重叠的粒子圆锥，让树看起来更茂密
+    for (let i = 0; i < 4; i++) {
+        // 每层半径逐层缩小，位置逐层升高
+        const geometry = new THREE.ConeGeometry(5 - i, 6, 60, 20); 
+        const material = new THREE.PointsMaterial({ 
+            color: 0x00ff88, 
+            size: 0.12,
+            transparent: true,
+            opacity: 0.8
+        });
+        const layer = new THREE.Points(geometry, material);
+        layer.position.y = i * 2; 
+        tree.add(layer);
+    }
 
-            function animate() {
-                requestAnimationFrame(animate);
-                tree.rotation.y += 0.005; // 基础自动旋转
-                renderer.render(scene, camera);
-            }
-            animate();
-        }
+    // 在树顶增加一颗亮白色的星
+    const starGeo = new THREE.SphereGeometry(0.4, 10, 10);
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.2 });
+    const star = new THREE.Points(starGeo, starMat);
+    star.position.y = 9;
+    tree.add(star);
 
+    scene.add(tree);
+
+    // 修改初始视角：不仅是 z 轴，让相机高一点并向下看，这样一开始就是立体的
+    camera.position.set(0, 5, 18);
+    camera.lookAt(0, 5, 0);
+
+    function animate() {
+        requestAnimationFrame(animate);
+        // 如果没有手势，树会保持缓慢自转
+        tree.rotation.y += 0.005; 
+        renderer.render(scene, camera);
+    }
+    animate();
+}
         // --- 2. 初始化 MediaPipe AI 手势 ---
         function onResults(results) {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
