@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 梦幻互动音乐圣诞树 - AI 手势版</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        /* UI Overlay */
+        #ui-layer { position: absolute; top: 10px; right: 10px; z-index: 10; color: white; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+        .panel { background: rgba(0, 20, 40, 0.7); padding: 15px; border-radius: 10px; backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.2); width: 280px; }
+        h1 { font-size: 1.2rem; margin: 0 0 10px 0; color: #4deeea; text-shadow: 0 0 10px #4deeea; }
+        button, input[type="file"] { background: rgba(255,255,255,0.1); border: 1px solid #4deeea; color: white; padding: 5px 10px; cursor: pointer; border-radius: 4px; transition: 0.3s; width: 100%; margin-bottom: 5px; }
+        button:hover { background: #4deeea; color: #000; }
+        .status { font-size: 0.8rem; color: #aaa; margin-top: 5px; }
+        
+        /* Video for MediaPipe (Hidden but active) */
+        #input_video { position: absolute; top: 0; left: 0; opacity: 0; pointer-events: none; z-index: -1; }
+        
+        /* Start Screen */
+        #start-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; display: flex; justify-content: center; align-items: center; flex-direction: column; transition: opacity 1s; }
+        #start-btn { width: 200px; padding: 15px; font-size: 1.5rem; background: #ff0055; border: none; box-shadow: 0 0 20px #ff0055; }
+        
+        /* Pop-up Photo */
+        #photo-popup { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0); width: 300px; height: 300px; border-radius: 50%; border: 5px solid #fff; box-shadow: 0 0 50px rgba(255,255,255,0.8); z-index: 20; object-fit: cover; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: none; }
+        
+        .loading { color: #4deeea; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="start-screen">
+        <h1 style="font-size: 3rem; margin-bottom: 20px;">🎄 Cyber Christmas 🎄</h1>
+        <div id="loading-text" class="loading">正在加载 AI 模型与 3D 引擎...</div>
+        <button id="start-btn" style="display: none;">开启体验</button>
+        <p style="color: #666; margin-top: 20px;">请允许摄像头权限以启用手势控制</p>
+    </div>
+
+    <div id="ui-layer">
+        <div class="panel">
+            <h1>互动控制台
+</div>
+        <div class="panel status" id="status-panel">
+            AI 状态: <span id="ai-status">等待启动...</span><br>
+            手势识别: <span id="gesture-status">未检测到</span>
+        </div>
+    </div>
+
+    <video id="input_video"></video>
+    <div id="canvas-container"></div>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const startBtn = document.getElementById('start-btn');
+        const loadingText = document.getElementById('loading-text');
+        const aiStatus = document.getElementById('ai-status');
+
+        let scene, camera, renderer, tree;
+        let hands;
+
+        // --- 1. 初始化 3D 场景 ---
+        function initThree() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // 创建一颗简单的粒子圣诞树
+            const geometry = new THREE.ConeGeometry(5, 10, 32);
+            const material = new THREE.PointsMaterial({ color: 0x00ff88, size: 0.1 });
+            tree = new THREE.Points(geometry, material);
+            scene.add(tree);
+
+            camera.position.z = 15;
+
+            function animate() {
+                requestAnimationFrame(animate);
+                tree.rotation.y += 0.005; // 基础自动旋转
+                renderer.render(scene, camera);
+            }
+            animate();
+        }
+
+        // --- 2. 初始化 MediaPipe AI 手势 ---
+        function onResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                document.getElementById('gesture-status').innerText = "检测中";
+                // 获取食指指尖坐标控制旋转
+                const landmark = results.multiHandLandmarks[0][8]; 
+                tree.rotation.y = landmark.x * Math.PI * 4;
+                tree.rotation.x = (landmark.y - 0.5) * Math.PI;
+            } else {
+                document.getElementById('gesture-status').innerText = "未检测到";
+            }
+        }
+
+        async function initAI() {
+            hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            hands.onResults(onResults);
+
+            const cameraPipe = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({ image: videoElement });
+                },
+                width: 640,
+                height: 480
+            });
+
+            startBtn.style.display = 'block';
+            loadingText.style.display = 'none';
+
+            startBtn.onclick = () => {
+                cameraPipe.start();
+                document.getElementById('start-screen').style.opacity = '0';
+                setTimeout(() => {
+                    document.getElementById('start-screen').style.display = 'none';
+                }, 1000);
+                aiStatus.innerText = "已启动";
+            };
+        }
+
+        // 启动流程
+        initThree();
+        initAI().catch(err => {
+            aiStatus.innerText = "错误: " + err.message;
+            console.error(err);
+        });
+
+        // 窗口自适应
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
